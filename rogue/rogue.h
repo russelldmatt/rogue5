@@ -178,7 +178,7 @@
 
 #define GOLD_PERCENT 46
 
-#define MAX_OPT_LEN 40
+#define MAX_OPT_LEN 1024
 
 struct id {
 	short value;
