@@ -44,7 +44,7 @@ extern char login_name[];
 extern char *m_names[];
 extern short max_level;
 extern boolean score_only, no_skull, msg_cleared;
-extern char *byebye_string, *nick_name;
+extern char *byebye_string, *nick_name, *score_file;
 
 killed_by(monster, other)
 object *monster;
@@ -329,9 +329,9 @@ short other;
          * Do not use "a+" here.  Writes to a file opened in append mode
          * always go to the end of the file, even after rewind().
          */
-        fp = fopen(_PATH_SCOREFILE, "r+");
+        fp = fopen(score_file, "r+");
         if (fp == NULL) {
-                fp = fopen(_PATH_SCOREFILE, "w+");
+                fp = fopen(score_file, "w+");
         }
         if (fp == NULL) {
                 message("cannot read/write/create score file", 0);
