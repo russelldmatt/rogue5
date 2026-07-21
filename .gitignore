@@ -1,0 +1,11 @@
+*.o
+rogue/rogue
+rogue/obj
+rogue/rogue.scores
+rogue/rogue.lock
+rogue/*.save
+rogue.scores
+rogue.scores.saved
+rogue.screen
+*.save
+.DS_Store
