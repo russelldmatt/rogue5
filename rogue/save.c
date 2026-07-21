@@ -39,6 +39,66 @@ static char sccsid[] = "@(#)save.c	5.3 (Berkeley) 6/1/90";
 #include <stdio.h>
 #include "rogue.h"
 
+extern object mon_tab[MONSTERS];
+
+static void
+fix_monster_damage()
+{
+        object *monster;
+
+        monster = level_monsters.next_object;
+
+        while (monster) {
+                if ((monster->m_char >= 'A') &&
+                    (monster->m_char <= 'Z')) {
+                        monster->m_damage =
+                            mon_tab[monster->m_char - 'A'].m_damage;
+                }
+
+                monster = monster->next_monster;
+        }
+}
+
+static void
+fix_weapon_damage(pack)
+object *pack;
+{
+        object *obj;
+
+        obj = pack->next_object;
+
+        while (obj) {
+                if (obj->what_is == WEAPON) {
+                        switch (obj->which_kind) {
+                        case BOW:
+                        case DART:
+                                obj->damage = "1d1";
+                                break;
+                        case ARROW:
+                                obj->damage = "1d2";
+                                break;
+                        case DAGGER:
+                                obj->damage = "1d3";
+                                break;
+                        case SHURIKEN:
+                                obj->damage = "1d4";
+                                break;
+                        case MACE:
+                                obj->damage = "2d3";
+                                break;
+                        case LONG_SWORD:
+                                obj->damage = "3d4";
+                                break;
+                        case TWO_HANDED_SWORD:
+                                obj->damage = "4d5";
+                                break;
+                        }
+                }
+
+                obj = obj->next_object;
+        }
+}
+
 short write_failed = 0;
 char *save_file = (char *) 0;
 
@@ -177,7 +237,11 @@ char *fname;
 
 	r_read(fp, (char *) &party_room, sizeof(party_room));
 	read_pack(&level_monsters, fp, 0);
+	fix_monster_damage();
+	
 	read_pack(&level_objects, fp, 0);
+	fix_weapon_damage(&level_objects);
+	
 	r_read(fp, (char *) &saved_file_id, sizeof(saved_file_id));
 	if (new_file_id != saved_file_id) {
 		clean_up("sorry, saved game is not in the same file");
@@ -186,6 +250,7 @@ char *fname;
 	r_read(fp, (char *) &foods, sizeof(foods));
 	r_read(fp, (char *) &rogue, sizeof(fighter));
 	read_pack(&rogue.pack, fp, 1);
+	fix_weapon_damage(&rogue.pack);
 	rw_id(id_potions, fp, POTIONS, 0);
 	rw_id(id_scrolls, fp, SCROLS, 0);
 	rw_id(id_wands, fp, WANDS, 0);
