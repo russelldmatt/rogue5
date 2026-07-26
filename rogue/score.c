@@ -37,6 +37,7 @@ static char sccsid[] = "@(#)score.c	5.5 (Berkeley) 6/1/90";
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "rogue.h"
 #include "pathnames.h"
 
@@ -177,139 +178,6 @@ boolean from_intrpt;
 	check_message();
 	killed_by((object *) 0, QUIT);
 }
-
-/* put_scores(monster, other) */
-/* object *monster; */
-/* short other; */
-/* { */
-/* 	short i, n, rank = 10, x, ne = 0, found_player = -1; */
-/* 	char scores[10][82]; */
-/* 	char n_names[10][30]; */
-/* 	char buf[128]; */
-/* 	FILE *fp; */
-/* 	long s; */
-/* 	boolean pause = score_only; */
-
-/* 	md_lock(1); */
-
-/*         fp = fopen(_PATH_SCOREFILE, "r+"); */
-/*         if (fp == NULL) { */
-/*                 fp = fopen(_PATH_SCOREFILE, "w+"); */
-/*         } */
-/*         if (fp == NULL) { */
-/*                 message("cannot read/write/create score file", 0); */
-/*                 sf_error(); */
-/*         }	 */
-/* 	/\* if ((fp = fopen(_PATH_SCOREFILE, "a+")) == NULL) { *\/ */
-/* 	/\* 	message("cannot read/write/create score file", 0); *\/ */
-/* 	/\* 	sf_error(); *\/ */
-/* 	/\* } *\/ */
-/* 	rewind(fp); */
-/* 	(void) xxx(1); */
-
-/* 	for (i = 0; i < 10; i++) { */
-/* 		if (((n = fread(scores[i], sizeof(char), 80, fp)) < 80) && (n != 0)) { */
-/* 			sf_error(); */
-/* 		} else if (n != 0) { */
-/* 			xxxx(scores[i], 80); */
-/* 			if ((n = fread(n_names[i], sizeof(char), 30, fp)) < 30) { */
-/* 				sf_error(); */
-/* 			} */
-/* 			xxxx(n_names[i], 30); */
-/* 		} else { */
-/* 			break; */
-/* 		} */
-/* 		ne++; */
-/* 		if ((!score_only) && (found_player == -1)) { */
-/* 			if (!name_cmp(scores[i]+15, login_name)) { */
-/* 				x = 5; */
-/* 				while (scores[i][x] == ' ') { */
-/* 					x++; */
-/* 				} */
-/* 				s = lget_number(scores[i] + x); */
-/* 				if (rogue.gold < s) { */
-/* 					score_only = 1; */
-/* 				} else { */
-/* 					found_player = i; */
-/* 				} */
-/* 			} */
-/* 		} */
-/* 	} */
-/* 	if (found_player != -1) { */
-/* 		ne--; */
-/* 		for (i = found_player; i < ne; i++) { */
-/* 			(void) strcpy(scores[i], scores[i+1]); */
-/* 			(void) strcpy(n_names[i], n_names[i+1]); */
-/* 		} */
-/* 	} */
-/* 	if (!score_only) { */
-/* 		for (i = 0; i < ne; i++) { */
-/* 			x = 5; */
-/* 			while (scores[i][x] == ' ') { */
-/* 				x++; */
-/* 			} */
-/* 			s = lget_number(scores[i] + x); */
-
-/* 			if (rogue.gold >= s) { */
-/* 				rank = i; */
-/* 				break; */
-/* 			} */
-/* 		} */
-/* 		if (ne == 0) { */
-/* 			rank = 0; */
-/* 		} else if ((ne < 10) && (rank == 10)) { */
-/* 			rank = ne; */
-/* 		} */
-/* 		if (rank < 10) { */
-/* 			insert_score(scores, n_names, nick_name, rank, ne, monster, */
-/* 				other); */
-/* 			if (ne < 10) { */
-/* 				ne++; */
-/* 			} */
-/* 		} */
-/* 		rewind(fp); */
-/* 	} */
-
-/* 	clear(); */
-/* 	mvaddstr(3, 30, "Top  Ten  Rogueists"); */
-/* 	mvaddstr(8, 0, "Rank   Score   Name"); */
-
-/* 	md_ignore_signals(); */
-
-/* 	(void) xxx(1); */
-
-/* 	for (i = 0; i < ne; i++) { */
-/* 		if (i == rank) { */
-/* 			standout(); */
-/* 		} */
-/* 		if (i == 9) { */
-/* 			scores[i][0] = '1'; */
-/* 			scores[i][1] = '0'; */
-/* 		} else { */
-/* 			scores[i][0] = ' '; */
-/* 			scores[i][1] = i + '1'; */
-/* 		} */
-/* 		nickize(buf, scores[i], n_names[i]); */
-/* 		mvaddstr(i+10, 0, buf); */
-/* 		if (rank < 10) { */
-/* 			xxxx(scores[i], 80); */
-/* 			fwrite(scores[i], sizeof(char), 80, fp); */
-/* 			xxxx(n_names[i], 30); */
-/* 			fwrite(n_names[i], sizeof(char), 30, fp); */
-/* 		} */
-/* 		if (i == rank) { */
-/* 			standend(); */
-/* 		} */
-/* 	} */
-/* 	md_lock(0); */
-/* 	refresh(); */
-/* 	fclose(fp); */
-/* 	message("", 0); */
-/* 	if (pause) { */
-/* 		message("", 0); */
-/* 	} */
-/* 	clean_up(""); */
-/* } */
 
 put_scores(monster, other)
 object *monster;
