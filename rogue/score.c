@@ -179,28 +179,217 @@ boolean from_intrpt;
 	killed_by((object *) 0, QUIT);
 }
 
+#define SCORES_PER_PLAYER 5
+#define SCORES_PER_PAGE 20
+
+typedef struct {
+        char score[82];
+        char name[30];
+        long value;
+        boolean is_new;
+        long order;
+} score_entry;
+
+static long
+score_value(score)
+char *score;
+{
+        short x = 5;
+
+        while (score[x] == ' ') {
+                x++;
+        }
+
+        return lget_number(score + x);
+}
+
+static int
+compare_scores(a, b)
+const void *a;
+const void *b;
+{
+        const score_entry *sa = (const score_entry *) a;
+        const score_entry *sb = (const score_entry *) b;
+
+        if (sa->value > sb->value) {
+                return -1;
+        }
+
+        if (sa->value < sb->value) {
+                return 1;
+        }
+
+        /*
+         * Prefer the newly-added score on an exact tie.
+         */
+        if (sa->is_new && !sb->is_new) {
+                return -1;
+        }
+
+        if (!sa->is_new && sb->is_new) {
+                return 1;
+        }
+
+        /*
+         * Otherwise preserve the previous order for ties.
+         */
+        if (sa->order < sb->order) {
+                return -1;
+        }
+
+        if (sa->order > sb->order) {
+                return 1;
+        }
+
+        return 0;
+}
+
+static int
+trim_scores(entries, ne)
+score_entry *entries;
+int ne;
+{
+        int i, j;
+        int kept = 0;
+        int player_count;
+
+        /*
+         * entries are globally sorted highest-to-lowest.
+         * Therefore the first 10 encountered for each name
+         * are that player's best 10.
+         */
+        for (i = 0; i < ne; i++) {
+                player_count = 0;
+
+                for (j = 0; j < kept; j++) {
+                        if (!strcmp(entries[i].name, entries[j].name)) {
+                                player_count++;
+                        }
+                }
+
+                if (player_count < SCORES_PER_PLAYER) {
+                        if (kept != i) {
+                                entries[kept] = entries[i];
+                        }
+                        kept++;
+                }
+        }
+
+        return kept;
+}
+
+static void
+set_score_rank(score, rank)
+char *score;
+int rank;
+{
+        if (rank < 10) {
+                score[0] = ' ';
+                score[1] = '0' + rank;
+        } else if (rank < 100) {
+                score[0] = '0' + (rank / 10);
+                score[1] = '0' + (rank % 10);
+        } else {
+                /*
+                 * The historical score record only reserves
+                 * two characters for rank.
+                 */
+                score[0] = '*';
+                score[1] = '*';
+        }
+}
+
+static void
+show_scores(entries, ne)
+score_entry *entries;
+int ne;
+{
+        int start, end, i, row;
+        char buf[128];
+        char display_score[82];
+
+        if (ne == 0) {
+                clear();
+                center(3, "Top Rogueists");
+                mvaddstr(8, 0, "Rank   Score   Name");
+                refresh();
+                return;
+        }
+
+        for (start = 0; start < ne; start += SCORES_PER_PAGE) {
+                clear();
+                center(3, "Top Rogueists");
+                mvaddstr(8, 0, "Rank   Score   Name");
+
+                end = start + SCORES_PER_PAGE;
+                if (end > ne) {
+                        end = ne;
+                }
+
+                row = 10;
+
+                for (i = start; i < end; i++) {
+                        (void) strcpy(display_score, entries[i].score);
+                        set_score_rank(display_score, i + 1);
+
+                        if (entries[i].is_new) {
+                                standout();
+                        }
+
+                        nickize(buf, display_score, entries[i].name);
+                        mvaddstr(row++, 0, buf);
+
+                        if (entries[i].is_new) {
+                                standend();
+                        }
+                }
+
+                if (end < ne) {
+                        mvaddstr(22, 0,
+                                "-- press any key for more scores --");
+                        refresh();
+                        (void) rgetchar();
+                } else {
+                        refresh();
+                }
+        }
+}
+
 put_scores(monster, other)
 object *monster;
 short other;
 {
-        short i, n, rank = 10, x, ne = 0;
-        char scores[10][82];
-        char n_names[10][30];
-        char buf[128];
+        int i, n;
+        int ne = 0;
+        int capacity = 0;
+        int new_capacity;
+
+        score_entry *entries = (score_entry *) 0;
+        score_entry *tmp;
+
+        char raw_score[82];
+        char raw_name[30];
+
+        char encoded_score[80];
+        char encoded_name[30];
+
+        char new_scores[1][82];
+        char new_names[1][30];
+
         FILE *fp;
-        long s;
         boolean pause = score_only;
 
         md_lock(1);
 
         /*
-         * Do not use "a+" here.  Writes to a file opened in append mode
-         * always go to the end of the file, even after rewind().
+         * Read all existing score records.
          */
         fp = fopen(score_file, "r+");
+
         if (fp == NULL) {
                 fp = fopen(score_file, "w+");
         }
+
         if (fp == NULL) {
                 message("cannot read/write/create score file", 0);
                 sf_error();
@@ -209,115 +398,184 @@ short other;
         rewind(fp);
         (void) xxx(1);
 
-        /*
-         * Read the existing top ten scores.
-         *
-         * Unlike the original code, we do not look for an existing score
-         * belonging to login_name.  Every run is allowed to have its own
-         * entry in the top ten.
-         */
-        for (i = 0; i < 10; i++) {
-                n = fread(scores[i], sizeof(char), 80, fp);
+        for (;;) {
+                n = fread(raw_score, sizeof(char), 80, fp);
 
-                if ((n < 80) && (n != 0)) {
-                        sf_error();
-                } else if (n != 0) {
-                        xxxx(scores[i], 80);
-
-                        n = fread(n_names[i], sizeof(char), 30, fp);
-                        if (n < 30) {
-                                sf_error();
-                        }
-                        xxxx(n_names[i], 30);
-                } else {
+                if (n == 0) {
                         break;
                 }
+
+                if (n < 80) {
+                        sf_error();
+                }
+
+                xxxx(raw_score, 80);
+
+                n = fread(raw_name, sizeof(char), 30, fp);
+
+                if (n < 30) {
+                        sf_error();
+                }
+
+                xxxx(raw_name, 30);
+
+                if (ne == capacity) {
+                        new_capacity = capacity ? capacity * 2 : 16;
+
+                        tmp = (score_entry *) realloc(
+                                entries,
+                                new_capacity * sizeof(score_entry));
+
+                        if (tmp == NULL) {
+                                fclose(fp);
+                                md_lock(0);
+                                clean_up("out of memory reading scores");
+                        }
+
+                        entries = tmp;
+                        capacity = new_capacity;
+                }
+
+                (void) memcpy(entries[ne].score, raw_score, 80);
+                entries[ne].score[80] = 0;
+                entries[ne].score[81] = 0;
+
+                (void) memcpy(entries[ne].name, raw_name, 30);
+                entries[ne].name[29] = 0;
+
+                entries[ne].value =
+                        score_value(entries[ne].score);
+
+                entries[ne].is_new = 0;
+                entries[ne].order = ne;
+
+                ne++;
+        }
+
+        fclose(fp);
+
+        /*
+         * Add the current run.
+         */
+        if (!score_only) {
+                if (ne == capacity) {
+                        new_capacity = capacity ? capacity * 2 : 16;
+
+                        tmp = (score_entry *) realloc(
+                                entries,
+                                new_capacity * sizeof(score_entry));
+
+                        if (tmp == NULL) {
+                                md_lock(0);
+                                clean_up("out of memory adding score");
+                        }
+
+                        entries = tmp;
+                        capacity = new_capacity;
+                }
+
+                (void) memset(new_scores, 0, sizeof(new_scores));
+                (void) memset(new_names, 0, sizeof(new_names));
+
+                /*
+                 * Reuse Rogue's existing formatting code.
+                 * With n == 0, insert_score() simply creates
+                 * one score and does not shift anything.
+                 */
+                insert_score(new_scores, new_names, nick_name,
+                        0, 0, monster, other);
+
+                (void) strcpy(entries[ne].score, new_scores[0]);
+
+                (void) strncpy(entries[ne].name,
+                        new_names[0], 29);
+                entries[ne].name[29] = 0;
+
+                entries[ne].value = rogue.gold;
+                entries[ne].is_new = 1;
+                entries[ne].order = ne;
 
                 ne++;
         }
 
         /*
-         * Unless we're only displaying scores, find where the current
-         * score belongs in the top ten.
+         * Interleave everybody globally by score.
+         */
+        if (ne > 1) {
+                qsort(entries, ne,
+                        sizeof(score_entry), compare_scores);
+        }
+
+        /*
+         * But allow each username to contribute at most
+         * its own ten best scores.
+         */
+        ne = trim_scores(entries, ne);
+
+        /*
+         * Update the stored global rank numbers.
+         */
+        for (i = 0; i < ne; i++) {
+                set_score_rank(entries[i].score, i + 1);
+        }
+
+        /*
+         * A normal game rewrites the complete retained list.
+         * "w+" is intentional: it also removes records that
+         * fell outside a player's personal top ten.
          */
         if (!score_only) {
+                fp = fopen(score_file, "w+");
+
+                if (fp == NULL) {
+                        md_lock(0);
+                        clean_up("cannot write score file");
+                }
+
+                (void) xxx(1);
+
                 for (i = 0; i < ne; i++) {
-                        x = 5;
-                        while (scores[i][x] == ' ') {
-                                x++;
+                        (void) memcpy(encoded_score,
+                                entries[i].score, 80);
+
+                        (void) memset(encoded_name, 0, 30);
+                        (void) strncpy(encoded_name,
+                                entries[i].name, 29);
+
+                        xxxx(encoded_score, 80);
+
+                        if (fwrite(encoded_score,
+                                sizeof(char), 80, fp) != 80) {
+                                sf_error();
                         }
-                        s = lget_number(scores[i] + x);
 
-                        if (rogue.gold >= s) {
-                                rank = i;
-                                break;
-                        }
-                }
+                        xxxx(encoded_name, 30);
 
-                if (ne == 0) {
-                        rank = 0;
-                } else if ((ne < 10) && (rank == 10)) {
-                        rank = ne;
-                }
-
-                /*
-                 * Add this run if it qualifies for the top ten.
-                 * If there are already ten scores, insert_score()
-                 * pushes the lower scores down and the last one drops off.
-                 */
-                if (rank < 10) {
-                        insert_score(scores, n_names, nick_name, rank, ne,
-                                monster, other);
-
-                        if (ne < 10) {
-                                ne++;
+                        if (fwrite(encoded_name,
+                                sizeof(char), 30, fp) != 30) {
+                                sf_error();
                         }
                 }
 
-                rewind(fp);
+                fclose(fp);
         }
-
-        clear();
-        mvaddstr(3, 30, "Top  Ten  Rogueists");
-        mvaddstr(8, 0, "Rank   Score   Name");
 
         md_ignore_signals();
-        (void) xxx(1);
 
-        for (i = 0; i < ne; i++) {
-                if (i == rank) {
-                        standout();
-                }
-
-                if (i == 9) {
-                        scores[i][0] = '1';
-                        scores[i][1] = '0';
-                } else {
-                        scores[i][0] = ' ';
-                        scores[i][1] = i + '1';
-                }
-
-                nickize(buf, scores[i], n_names[i]);
-                mvaddstr(i + 10, 0, buf);
-
-                if (rank < 10) {
-                        xxxx(scores[i], 80);
-                        fwrite(scores[i], sizeof(char), 80, fp);
-
-                        xxxx(n_names[i], 30);
-                        fwrite(n_names[i], sizeof(char), 30, fp);
-                }
-
-                if (i == rank) {
-                        standend();
-                }
-        }
+        /*
+         * Display everyone together, globally ranked,
+         * ten rows at a time.
+         */
+        show_scores(entries, ne);
 
         md_lock(0);
-        refresh();
-        fclose(fp);
+
+        if (entries != (score_entry *) 0) {
+                free(entries);
+        }
 
         message("", 0);
+
         if (pause) {
                 message("", 0);
         }
@@ -384,7 +642,8 @@ object *monster;
 	}
 	buf[79] = 0;
 	(void) strcpy(scores[rank], buf);
-	(void) strcpy(n_names[rank], n_name);
+	(void) strncpy(n_names[rank], n_name, 29);
+	n_names[rank][29] = 0;
 }
 
 is_vowel(ch)
