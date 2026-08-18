@@ -180,7 +180,7 @@ boolean from_intrpt;
 }
 
 #define SCORES_PER_PLAYER 5
-#define SCORES_PER_PAGE 20
+#define SCORES_PER_PAGE 10
 
 typedef struct {
         char score[82];
