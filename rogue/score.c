@@ -366,22 +366,21 @@ char *score, *name;
         char tmp_path[MAX_OPT_LEN + 128];
         char final_path[MAX_OPT_LEN + 128];
         char safe_name[30];
-        char encoded_score[80];
-        char encoded_name[30];
+        char stored_name[30];
+        char text[82];
         FILE *fp;
-        long now;
+	time_t now;
+	struct tm *tm;
+	char timestamp[32];
         long random_part;
         int i;
 
-        /*
-         * Create the score directory if needed.
-         */
         if ((mkdir(score_dir, 0755) < 0) && (errno != EEXIST)) {
                 clean_up("cannot create score directory");
         }
 
         /*
-         * Make the nickname safe to use in a filename.
+         * Make a filename-safe version of the nickname.
          */
         for (i = 0; (i < 29) && name[i]; i++) {
                 if ((name[i] >= 'a' && name[i] <= 'z') ||
@@ -395,48 +394,71 @@ char *score, *name;
         }
         safe_name[i] = 0;
 
-        now = (long) time((time_t *) 0);
-        random_part = rrandom() & 0xffff;
+        /*
+         * Preserve the displayed nickname, except don't allow a newline
+         * to break the simple text-file format.
+         */
+        (void) strncpy(stored_name, name, 29);
+        stored_name[29] = 0;
 
-        sprintf(tmp_path,
-                "%s/.tmp-%ld-%ld-%04lx",
-                score_dir,
-                now,
-                (long) getpid(),
-                random_part);
+        for (i = 0; stored_name[i]; i++) {
+                if ((stored_name[i] == '\n') ||
+                    (stored_name[i] == '\r')) {
+                        stored_name[i] = '_';
+                }
+        }
 
-        sprintf(final_path,
-                "%s/score-%ld-%s-%ld-%04lx.score",
-                score_dir,
-                now,
-                safe_name,
-                (long) getpid(),
-                random_part);
+        /*
+         * Remove the historical padding spaces from the score text.
+         */
+        (void) strncpy(text, score, 81);
+        text[81] = 0;
 
-        fp = fopen(tmp_path, "wb");
+        i = strlen(text) - 1;
+        while ((i >= 0) && (text[i] == ' ')) {
+                text[i--] = 0;
+        }
+
+
+	now = time((time_t *) 0);
+	tm = localtime(&now);
+
+	if (tm == NULL ||
+	    strftime(timestamp, sizeof(timestamp),
+		     "%Y%m%d-%H%M%S", tm) == 0) {
+	  clean_up("cannot format score timestamp");
+	}
+
+	random_part = rrandom() & 0xffff;
+
+	sprintf(tmp_path,
+		"%s/.tmp-%s-%ld-%04lx",
+		score_dir,
+		timestamp,
+		(long) getpid(),
+		random_part);
+
+	sprintf(final_path,
+		"%s/score-%s-%s-%ld-%04lx.score",
+		score_dir,
+		timestamp,
+		safe_name,
+		(long) getpid(),
+		random_part);
+ 
+        fp = fopen(tmp_path, "w");
         if (fp == NULL) {
                 clean_up("cannot create score event");
         }
 
-        /*
-         * Each event file gets its own independent encryption stream.
-         */
-        (void) memcpy(encoded_score, score, 80);
-
-        (void) memset(encoded_name, 0, 30);
-        (void) strncpy(encoded_name, name, 29);
-
-        (void) xxx(1);
-
-        xxxx(encoded_score, 80);
-        if (fwrite(encoded_score, sizeof(char), 80, fp) != 80) {
-                fclose(fp);
-                unlink(tmp_path);
-                clean_up("cannot write score event");
-        }
-
-        xxxx(encoded_name, 30);
-        if (fwrite(encoded_name, sizeof(char), 30, fp) != 30) {
+        if (fprintf(fp,
+                "version=1\n"
+                "score=%ld\n"
+                "name=%s\n"
+                "text=%s\n",
+                score_value(score),
+                stored_name,
+                text) < 0) {
                 fclose(fp);
                 unlink(tmp_path);
                 clean_up("cannot write score event");
@@ -448,7 +470,7 @@ char *score, *name;
         }
 
         /*
-         * Atomic publish: readers will ignore .tmp files.
+         * Publish only after the complete file has been written.
          */
         if (rename(tmp_path, final_path) != 0) {
                 unlink(tmp_path);
