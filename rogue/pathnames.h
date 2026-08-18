@@ -20,5 +20,6 @@
  */
 
 #define	_PATH_SCOREFILE	"rogue.scores"
+#define _PATH_SCOREDIR  "rogue-scores"
 #define	_PATH_LOCKFILE	"rogue.lock"
 

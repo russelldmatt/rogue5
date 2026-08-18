@@ -43,6 +43,7 @@ static char sccsid[] = "@(#)init.c	5.3 (Berkeley) 6/1/90";
 char login_name[MAX_OPT_LEN];
 char *nick_name = (char *) 0;
 char *score_file = (char *) 0;
+char *score_dir = (char *) 0;
 char *rest_file = 0;
 boolean cant_int = 0;
 boolean did_int = 0;
@@ -261,6 +262,9 @@ do_opts()
 			} else if (!strncmp(eptr, "scorefile=", 10)) {
 				eptr += 10;
 				env_get_value(&score_file, eptr, 0);
+			} else if (!strncmp(eptr, "scoredir=", 9)) {
+			  eptr += 9;
+			  env_get_value(&score_dir, eptr, 0);
 			} else if (!strncmp(eptr, "jump", 4)) {
 				jump = 1;
 			} else if (!strncmp(eptr, "name=", 5)) {
@@ -288,6 +292,7 @@ do_opts()
 	init_str(&nick_name, login_name);
 	init_str(&save_file, "rogue.save");
 	init_str(&score_file, _PATH_SCOREFILE);
+	init_str(&score_dir, _PATH_SCOREDIR);
 	init_str(&fruit, "slime-mold");
 }
 

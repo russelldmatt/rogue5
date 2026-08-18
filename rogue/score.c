@@ -38,6 +38,10 @@ static char sccsid[] = "@(#)score.c	5.5 (Berkeley) 6/1/90";
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 #include "rogue.h"
 #include "pathnames.h"
 
@@ -45,7 +49,7 @@ extern char login_name[];
 extern char *m_names[];
 extern short max_level;
 extern boolean score_only, no_skull, msg_cleared;
-extern char *byebye_string, *nick_name, *score_file;
+extern char *byebye_string, *nick_name, *score_file, *score_dir;
 
 killed_by(monster, other)
 object *monster;
@@ -355,6 +359,103 @@ int ne;
         }
 }
 
+static void
+write_score_event(score, name)
+char *score, *name;
+{
+        char tmp_path[MAX_OPT_LEN + 128];
+        char final_path[MAX_OPT_LEN + 128];
+        char safe_name[30];
+        char encoded_score[80];
+        char encoded_name[30];
+        FILE *fp;
+        long now;
+        long random_part;
+        int i;
+
+        /*
+         * Create the score directory if needed.
+         */
+        if ((mkdir(score_dir, 0755) < 0) && (errno != EEXIST)) {
+                clean_up("cannot create score directory");
+        }
+
+        /*
+         * Make the nickname safe to use in a filename.
+         */
+        for (i = 0; (i < 29) && name[i]; i++) {
+                if ((name[i] >= 'a' && name[i] <= 'z') ||
+                    (name[i] >= 'A' && name[i] <= 'Z') ||
+                    (name[i] >= '0' && name[i] <= '9') ||
+                    name[i] == '-' || name[i] == '_') {
+                        safe_name[i] = name[i];
+                } else {
+                        safe_name[i] = '_';
+                }
+        }
+        safe_name[i] = 0;
+
+        now = (long) time((time_t *) 0);
+        random_part = rrandom() & 0xffff;
+
+        sprintf(tmp_path,
+                "%s/.tmp-%ld-%ld-%04lx",
+                score_dir,
+                now,
+                (long) getpid(),
+                random_part);
+
+        sprintf(final_path,
+                "%s/score-%ld-%s-%ld-%04lx.score",
+                score_dir,
+                now,
+                safe_name,
+                (long) getpid(),
+                random_part);
+
+        fp = fopen(tmp_path, "wb");
+        if (fp == NULL) {
+                clean_up("cannot create score event");
+        }
+
+        /*
+         * Each event file gets its own independent encryption stream.
+         */
+        (void) memcpy(encoded_score, score, 80);
+
+        (void) memset(encoded_name, 0, 30);
+        (void) strncpy(encoded_name, name, 29);
+
+        (void) xxx(1);
+
+        xxxx(encoded_score, 80);
+        if (fwrite(encoded_score, sizeof(char), 80, fp) != 80) {
+                fclose(fp);
+                unlink(tmp_path);
+                clean_up("cannot write score event");
+        }
+
+        xxxx(encoded_name, 30);
+        if (fwrite(encoded_name, sizeof(char), 30, fp) != 30) {
+                fclose(fp);
+                unlink(tmp_path);
+                clean_up("cannot write score event");
+        }
+
+        if (fclose(fp) != 0) {
+                unlink(tmp_path);
+                clean_up("cannot close score event");
+        }
+
+        /*
+         * Atomic publish: readers will ignore .tmp files.
+         */
+        if (rename(tmp_path, final_path) != 0) {
+                unlink(tmp_path);
+                clean_up("cannot publish score event");
+        }
+}
+
 put_scores(monster, other)
 object *monster;
 short other;
@@ -484,6 +585,11 @@ short other;
                  */
                 insert_score(new_scores, new_names, nick_name,
                         0, 0, monster, other);
+
+		/*
+		 * Save an immutable copy of this individual run.
+		 */
+		write_score_event(new_scores[0], new_names[0]);
 
                 (void) strcpy(entries[ne].score, new_scores[0]);
 
