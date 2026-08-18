@@ -4,8 +4,10 @@ rogue/obj
 rogue/rogue.scores
 rogue/rogue.lock
 rogue/*.save
+rogue.scores.backup*
 rogue.scores
 rogue.scores.saved
 rogue.screen
 *.save
 .DS_Store
+add-rogue-score.py
