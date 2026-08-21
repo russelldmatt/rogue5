@@ -11,3 +11,4 @@ rogue.screen
 *.save
 .DS_Store
 add-rogue-score.py
+rogue-scores/*.score
