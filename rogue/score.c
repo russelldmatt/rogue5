@@ -361,6 +361,27 @@ int ne;
 }
 
 static void
+show_scores_stdout(entries, ne)
+score_entry *entries;
+int ne;
+{
+        int i;
+        char buf[128];
+        char display_score[82];
+
+        printf("Top Rogueists\n\n");
+        printf("Rank   Score   Name\n\n");
+
+        for (i = 0; i < ne; i++) {
+                (void) strcpy(display_score, entries[i].score);
+                set_score_rank(display_score, i + 1);
+
+                nickize(buf, display_score, entries[i].name);
+                printf("%s\n", buf);
+        }
+}
+
+static void
 strip_newline(s)
 char *s;
 {
@@ -761,7 +782,6 @@ short other;
         char new_names[1][30];
 
         FILE *fp;
-        boolean pause = score_only;
 
         md_lock(1);
 
@@ -874,27 +894,33 @@ short other;
                 set_score_rank(entries[i].score, i + 1);
         }
 
-        md_ignore_signals();
+	if (score_only) {
+	  show_scores_stdout(entries, ne);
 
-        /*
-         * Display everyone together, globally ranked,
-         * ten rows at a time.
-         */
-        show_scores(entries, ne);
+	  md_lock(0);
 
-        md_lock(0);
+	  if (entries != (score_entry *) 0) {
+	    free(entries);
+	  }
 
-        if (entries != (score_entry *) 0) {
-                free(entries);
-        }
+	  md_exit(0);
+	}
 
-        message("", 0);
+	md_ignore_signals();
 
-        if (pause) {
-                message("", 0);
-        }
+	/*
+	 * Display scores after a completed game.
+	 */
+	show_scores(entries, ne);
 
-        clean_up("");
+	md_lock(0);
+
+	if (entries != (score_entry *) 0) {
+	  free(entries);
+	}
+
+	message("", 0);
+	clean_up("");
 }
 
 insert_score(scores, n_names, n_name, rank, n, monster, other)

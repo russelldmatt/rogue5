@@ -77,6 +77,10 @@ char *argv[];
 	do_args(argc, argv);
 	do_opts();
 
+	if (score_only) {
+	  put_scores((object *) 0, 0);
+	}
+
 	if (!score_only && !rest_file) {
 		printf("Hello %s, just a moment while I dig the dungeon...",
 			nick_name);
@@ -92,9 +96,6 @@ char *argv[];
 
 	md_heed_signals();
 
-	if (score_only) {
-		put_scores((object *) 0, 0);
-	}
 	seed = md_gseed();
 	(void) srrandom(seed);
 	if (rest_file) {
