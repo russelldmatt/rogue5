@@ -21,11 +21,22 @@ The Terminal window must be at least 80 columns by 24 rows.
 ## Files written while playing
 
 The original program used `/var/games`, which normally is not writable by a
-regular macOS user. This build stores these in `rogue/` instead:
+regular macOS user.
 
-- `rogue.scores`
-- `rogue.lock` (temporary)
-- saved games such as `rogue.save`
+This build stores saved games, such as `rogue.save`, in `rogue/`.
+
+Scores are stored separately. Each completed game is written as a plain-text
+`.score` file in the score directory configured with the `scoredir=` option in
+`ROGUEOPTS`.
+
+For example:
+
+    ROGUEOPTS="name=Matt,scoredir=/path/to/rogue-scores" ./rogue/rogue
+
+The old `rogue.scores` file is supported for migration only. New versions read
+it and copy legacy-only scores into the score directory, but never modify it.
+
+A temporary `rogue.lock` file may also be used while accessing legacy scores.
 
 ## Gameplay correction included
 

@@ -260,8 +260,8 @@ int ne;
 
         /*
          * entries are globally sorted highest-to-lowest.
-         * Therefore the first 10 encountered for each name
-         * are that player's best 10.
+         * Therefore the first 5 encountered for each name
+         * are that player's best 5.
          */
         for (i = 0; i < ne; i++) {
                 player_count = 0;
@@ -647,9 +647,6 @@ char *score, *name;
         char tmp_path[MAX_OPT_LEN + 128];
         char final_path[MAX_OPT_LEN + 128];
         char safe_name[30];
-        char stored_name[30];
-        char text[82];
-        FILE *fp;
 	time_t now;
 	struct tm *tm;
 	char timestamp[32];
@@ -674,32 +671,6 @@ char *score, *name;
                 }
         }
         safe_name[i] = 0;
-
-        /*
-         * Preserve the displayed nickname, except don't allow a newline
-         * to break the simple text-file format.
-         */
-        (void) strncpy(stored_name, name, 29);
-        stored_name[29] = 0;
-
-        for (i = 0; stored_name[i]; i++) {
-                if ((stored_name[i] == '\n') ||
-                    (stored_name[i] == '\r')) {
-                        stored_name[i] = '_';
-                }
-        }
-
-        /*
-         * Remove the historical padding spaces from the score text.
-         */
-        (void) strncpy(text, score, 81);
-        text[81] = 0;
-
-        i = strlen(text) - 1;
-        while ((i >= 0) && (text[i] == ' ')) {
-                text[i--] = 0;
-        }
-
 
 	now = time((time_t *) 0);
 	tm = localtime(&now);
@@ -780,10 +751,8 @@ short other;
         int i, n;
         int ne = 0;
         int capacity = 0;
-        int new_capacity;
 
         score_entry *entries = (score_entry *) 0;
-        score_entry *tmp;
 
         char raw_score[82];
         char raw_name[30];
@@ -819,7 +788,7 @@ short other;
 	    }
 
 	    if (n < 80) {
-	      sf_error();
+	      break;
 	    }
 
 	    xxxx(raw_score, 80);
@@ -827,7 +796,7 @@ short other;
 	    n = fread(raw_name, sizeof(char), 30, fp);
 
 	    if (n < 30) {
-	      sf_error();
+	      break;
 	    }
 
 	    xxxx(raw_name, 30);
@@ -858,22 +827,6 @@ short other;
          * Add the current run.
          */
         if (!score_only) {
-                if (ne == capacity) {
-                        new_capacity = capacity ? capacity * 2 : 16;
-
-                        tmp = (score_entry *) realloc(
-                                entries,
-                                new_capacity * sizeof(score_entry));
-
-                        if (tmp == NULL) {
-                                md_lock(0);
-                                clean_up("out of memory adding score");
-                        }
-
-                        entries = tmp;
-                        capacity = new_capacity;
-                }
-
                 (void) memset(new_scores, 0, sizeof(new_scores));
                 (void) memset(new_names, 0, sizeof(new_names));
 
@@ -890,17 +843,14 @@ short other;
 		 */
 		write_score_event(new_scores[0], new_names[0]);
 
-                (void) strcpy(entries[ne].score, new_scores[0]);
-
-                (void) strncpy(entries[ne].name,
-                        new_names[0], 29);
-                entries[ne].name[29] = 0;
-
-                entries[ne].value = rogue.gold;
-                entries[ne].is_new = 1;
-                entries[ne].order = ne;
-
-                ne++;
+		append_entry(
+			     &entries,
+			     &ne,
+			     &capacity,
+			     new_scores[0],
+			     new_names[0],
+			     rogue.gold,
+			     1);
         }
 
         /*
@@ -913,7 +863,7 @@ short other;
 
         /*
          * But allow each username to contribute at most
-         * its own ten best scores.
+         * its own 5 best scores.
          */
         ne = trim_scores(entries, ne);
 

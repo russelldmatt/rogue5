@@ -26,7 +26,7 @@ all: $(PROG)
 $(PROG): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-%.o: %.c rogue.h
+%.o: %.c rogue.h pathnames.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 run: $(PROG)
