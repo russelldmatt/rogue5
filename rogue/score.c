@@ -552,6 +552,94 @@ int *ne, *capacity;
         closedir(dir);
 }
 
+static unsigned long long
+legacy_score_hash(score, name)
+char *score, *name;
+{
+        unsigned long long h;
+        int i;
+
+        /*
+         * FNV-1a. Ignore the first two score characters because
+         * they contain the displayed rank, which can change.
+         */
+        h = 14695981039346656037ULL;
+
+        for (i = 2; i < 80; i++) {
+                h ^= (unsigned char) score[i];
+                h *= 1099511628211ULL;
+        }
+
+        /*
+         * Separator between score text and nickname.
+         */
+        h ^= 0xff;
+        h *= 1099511628211ULL;
+
+        for (i = 0; (i < 29) && name[i]; i++) {
+                h ^= (unsigned char) name[i];
+                h *= 1099511628211ULL;
+        }
+
+        return h;
+}
+
+static void
+write_plain_score_file(tmp_path, final_path, score, name)
+char *tmp_path, *final_path, *score, *name;
+{
+        char stored_name[30];
+        char text[82];
+        FILE *fp;
+        int i;
+
+        (void) strncpy(stored_name, name, 29);
+        stored_name[29] = 0;
+
+        for (i = 0; stored_name[i]; i++) {
+                if ((stored_name[i] == '\n') ||
+                    (stored_name[i] == '\r')) {
+                        stored_name[i] = '_';
+                }
+        }
+
+        (void) strncpy(text, score, 81);
+        text[81] = 0;
+
+        i = strlen(text) - 1;
+        while ((i >= 0) && (text[i] == ' ')) {
+                text[i--] = 0;
+        }
+
+        fp = fopen(tmp_path, "w");
+        if (fp == NULL) {
+                clean_up("cannot create score event");
+        }
+
+        if (fprintf(fp,
+                "version=1\n"
+                "score=%ld\n"
+                "name=%s\n"
+                "text=%s\n",
+                score_value(score),
+                stored_name,
+                text) < 0) {
+                fclose(fp);
+                unlink(tmp_path);
+                clean_up("cannot write score event");
+        }
+
+        if (fclose(fp) != 0) {
+                unlink(tmp_path);
+                clean_up("cannot close score event");
+        }
+
+        if (rename(tmp_path, final_path) != 0) {
+                unlink(tmp_path);
+                clean_up("cannot publish score event");
+        }
+}
+
 static void
 write_score_event(score, name)
 char *score, *name;
@@ -638,37 +726,51 @@ char *score, *name;
 		safe_name,
 		(long) getpid(),
 		random_part);
- 
-        fp = fopen(tmp_path, "w");
-        if (fp == NULL) {
-                clean_up("cannot create score event");
+
+	write_plain_score_file(tmp_path, final_path, score, name);
+}
+
+static void
+write_legacy_score_event(score, name)
+char *score, *name;
+{
+        char tmp_path[MAX_OPT_LEN + 128];
+        char final_path[MAX_OPT_LEN + 128];
+        unsigned long long hash;
+        long random_part;
+
+        if ((mkdir(score_dir, 0755) < 0) && (errno != EEXIST)) {
+                clean_up("cannot create score directory");
         }
 
-        if (fprintf(fp,
-                "version=1\n"
-                "score=%ld\n"
-                "name=%s\n"
-                "text=%s\n",
-                score_value(score),
-                stored_name,
-                text) < 0) {
-                fclose(fp);
-                unlink(tmp_path);
-                clean_up("cannot write score event");
-        }
+        hash = legacy_score_hash(score, name);
 
-        if (fclose(fp) != 0) {
-                unlink(tmp_path);
-                clean_up("cannot close score event");
-        }
+        sprintf(final_path,
+                "%s/legacy-%016llx.score",
+                score_dir,
+                hash);
 
         /*
-         * Publish only after the complete file has been written.
+         * Already safely migrated.
          */
-        if (rename(tmp_path, final_path) != 0) {
-                unlink(tmp_path);
-                clean_up("cannot publish score event");
+        if (access(final_path, F_OK) == 0) {
+                return;
         }
+
+        random_part = rrandom() & 0xffff;
+
+        sprintf(tmp_path,
+                "%s/.tmp-legacy-%016llx-%ld-%04lx",
+                score_dir,
+                hash,
+                (long) getpid(),
+                random_part);
+
+        write_plain_score_file(
+                tmp_path,
+                final_path,
+                score,
+                name);
 }
 
 put_scores(monster, other)
@@ -686,9 +788,6 @@ short other;
         char raw_score[82];
         char raw_name[30];
 
-        char encoded_score[80];
-        char encoded_name[30];
-
         char new_scores[1][82];
         char new_names[1][30];
 
@@ -702,57 +801,58 @@ short other;
 	 */
 	load_score_events(&entries, &ne, &capacity);
 
-        /*
-         * Read all existing score records.
-         */
-        fp = fopen(score_file, "r+");
+	/*
+	 * Read the legacy shared score file, if it exists.
+	 * New versions never create or modify it.
+	 */
+	fp = fopen(score_file, "r");
 
-        if (fp == NULL) {
-                fp = fopen(score_file, "w+");
-        }
+	if (fp != NULL) {
+	  rewind(fp);
+	  (void) xxx(1);
 
-        if (fp == NULL) {
-                message("cannot read/write/create score file", 0);
-                sf_error();
-        }
+	  for (;;) {
+	    n = fread(raw_score, sizeof(char), 80, fp);
 
-        rewind(fp);
-        (void) xxx(1);
+	    if (n == 0) {
+	      break;
+	    }
 
-        for (;;) {
-                n = fread(raw_score, sizeof(char), 80, fp);
+	    if (n < 80) {
+	      sf_error();
+	    }
 
-                if (n == 0) {
-                        break;
-                }
+	    xxxx(raw_score, 80);
 
-                if (n < 80) {
-                        sf_error();
-                }
+	    n = fread(raw_name, sizeof(char), 30, fp);
 
-                xxxx(raw_score, 80);
+	    if (n < 30) {
+	      sf_error();
+	    }
 
-                n = fread(raw_name, sizeof(char), 30, fp);
+	    xxxx(raw_name, 30);
 
-                if (n < 30) {
-                        sf_error();
-                }
+	    if (!same_score_exists(entries, ne,
+				   raw_score, raw_name)) {
+	      write_legacy_score_event(raw_score, raw_name);
 
-                xxxx(raw_name, 30);
+	      append_entry(
+			   &entries,
+			   &ne,
+			   &capacity,
+			   raw_score,
+			   raw_name,
+			   score_value(raw_score),
+			   0);
+	    }
+	  }
 
-		if (!same_score_exists(entries, ne, raw_score, raw_name)) {
-		  append_entry(
-			       &entries,
-			       &ne,
-			       &capacity,
-			       raw_score,
-			       raw_name,
-			       score_value(raw_score),
-			       0);
-		}
-        }
+	  fclose(fp);
 
-        fclose(fp);
+	} else if (errno != ENOENT) {
+	  message("cannot read legacy score file", 0);
+	  sf_error();
+	}
 
         /*
          * Add the current run.
@@ -822,47 +922,6 @@ short other;
          */
         for (i = 0; i < ne; i++) {
                 set_score_rank(entries[i].score, i + 1);
-        }
-
-        /*
-         * A normal game rewrites the complete retained list.
-         * "w+" is intentional: it also removes records that
-         * fell outside a player's personal top ten.
-         */
-        if (!score_only) {
-                fp = fopen(score_file, "w+");
-
-                if (fp == NULL) {
-                        md_lock(0);
-                        clean_up("cannot write score file");
-                }
-
-                (void) xxx(1);
-
-                for (i = 0; i < ne; i++) {
-                        (void) memcpy(encoded_score,
-                                entries[i].score, 80);
-
-                        (void) memset(encoded_name, 0, 30);
-                        (void) strncpy(encoded_name,
-                                entries[i].name, 29);
-
-                        xxxx(encoded_score, 80);
-
-                        if (fwrite(encoded_score,
-                                sizeof(char), 80, fp) != 80) {
-                                sf_error();
-                        }
-
-                        xxxx(encoded_name, 30);
-
-                        if (fwrite(encoded_name,
-                                sizeof(char), 30, fp) != 30) {
-                                sf_error();
-                        }
-                }
-
-                fclose(fp);
         }
 
         md_ignore_signals();
