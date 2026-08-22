@@ -42,6 +42,7 @@ static char sccsid[] = "@(#)score.c	5.5 (Berkeley) 6/1/90";
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
 #include "rogue.h"
 #include "pathnames.h"
 
@@ -360,6 +361,198 @@ int ne;
 }
 
 static void
+strip_newline(s)
+char *s;
+{
+        int n;
+
+        n = strlen(s);
+
+        while ((n > 0) &&
+               ((s[n-1] == '\n') || (s[n-1] == '\r'))) {
+                s[--n] = 0;
+        }
+}
+
+static void
+append_entry(entries, ne, capacity, score, name, value, is_new)
+score_entry **entries;
+int *ne, *capacity;
+char *score, *name;
+long value;
+boolean is_new;
+{
+        int new_capacity;
+        score_entry *tmp;
+
+        if (*ne == *capacity) {
+                new_capacity = *capacity ? *capacity * 2 : 16;
+
+                tmp = (score_entry *) realloc(
+                        *entries,
+                        new_capacity * sizeof(score_entry));
+
+                if (tmp == NULL) {
+                        clean_up("out of memory reading scores");
+                }
+
+                *entries = tmp;
+                *capacity = new_capacity;
+        }
+
+        (void) strncpy((*entries)[*ne].score, score, 81);
+        (*entries)[*ne].score[81] = 0;
+
+        (void) strncpy((*entries)[*ne].name, name, 29);
+        (*entries)[*ne].name[29] = 0;
+
+        (*entries)[*ne].value = value;
+        (*entries)[*ne].is_new = is_new;
+        (*entries)[*ne].order = *ne;
+
+        (*ne)++;
+}
+
+static boolean
+same_score_exists(entries, ne, score, name)
+score_entry *entries;
+int ne;
+char *score, *name;
+{
+        int i;
+
+        for (i = 0; i < ne; i++) {
+                /*
+                 * Ignore the first two characters because those
+                 * contain the displayed rank, which can change.
+                 */
+                if ((!strcmp(entries[i].name, name)) &&
+                    (!strcmp(entries[i].score + 2, score + 2))) {
+                        return 1;
+                }
+        }
+
+        return 0;
+}
+
+static void
+load_score_events(entries, ne, capacity)
+score_entry **entries;
+int *ne, *capacity;
+{
+        DIR *dir;
+        struct dirent *de;
+        FILE *fp;
+
+        char path[MAX_OPT_LEN + 256];
+        char line[256];
+
+        char name[30];
+        char text[82];
+        char score[82];
+
+        long value;
+        int version;
+        int len;
+        int text_len;
+
+        dir = opendir(score_dir);
+
+        if (dir == NULL) {
+                if (errno == ENOENT) {
+                        return;
+                }
+
+                clean_up("cannot read score directory");
+        }
+
+        while ((de = readdir(dir)) != NULL) {
+                len = strlen(de->d_name);
+
+                /*
+                 * Ignore temporary files and anything that isn't
+                 * one of our .score files.
+                 */
+                if ((len < 7) ||
+                    strcmp(de->d_name + len - 6, ".score")) {
+                        continue;
+                }
+
+                sprintf(path, "%s/%s", score_dir, de->d_name);
+
+                fp = fopen(path, "r");
+
+                if (fp == NULL) {
+                        continue;
+                }
+
+                version = 0;
+                value = -1;
+                name[0] = 0;
+                text[0] = 0;
+
+                while (fgets(line, sizeof(line), fp) != NULL) {
+                        strip_newline(line);
+
+                        if (!strncmp(line, "version=", 8)) {
+                                version = atoi(line + 8);
+
+                        } else if (!strncmp(line, "score=", 6)) {
+                                value = atol(line + 6);
+
+                        } else if (!strncmp(line, "name=", 5)) {
+                                (void) strncpy(name, line + 5, 29);
+                                name[29] = 0;
+
+                        } else if (!strncmp(line, "text=", 5)) {
+                                (void) strncpy(text, line + 5, 81);
+                                text[81] = 0;
+                        }
+                }
+
+                fclose(fp);
+
+                /*
+                 * Ignore malformed or future-version files rather
+                 * than making one bad iCloud file break -s.
+                 */
+                if ((version != 1) ||
+                    (value < 0) ||
+                    (!name[0]) ||
+                    (!text[0])) {
+                        continue;
+                }
+
+                /*
+                 * Convert the human-readable text back into Rogue's
+                 * traditional padded 80-byte score string.
+                 */
+                (void) memset(score, ' ', 79);
+                score[79] = 0;
+                score[80] = 0;
+                score[81] = 0;
+
+                text_len = strlen(text);
+                if (text_len > 79) {
+                        text_len = 79;
+                }
+
+                (void) memcpy(score, text, text_len);
+
+                append_entry(
+                        entries,
+                        ne,
+                        capacity,
+                        score,
+                        name,
+                        value,
+                        0);
+        }
+
+        closedir(dir);
+}
+
+static void
 write_score_event(score, name)
 char *score, *name;
 {
@@ -504,6 +697,11 @@ short other;
 
         md_lock(1);
 
+	/*
+	 * New append-only score events are our preferred source.
+	 */
+	load_score_events(&entries, &ne, &capacity);
+
         /*
          * Read all existing score records.
          */
@@ -542,37 +740,16 @@ short other;
 
                 xxxx(raw_name, 30);
 
-                if (ne == capacity) {
-                        new_capacity = capacity ? capacity * 2 : 16;
-
-                        tmp = (score_entry *) realloc(
-                                entries,
-                                new_capacity * sizeof(score_entry));
-
-                        if (tmp == NULL) {
-                                fclose(fp);
-                                md_lock(0);
-                                clean_up("out of memory reading scores");
-                        }
-
-                        entries = tmp;
-                        capacity = new_capacity;
-                }
-
-                (void) memcpy(entries[ne].score, raw_score, 80);
-                entries[ne].score[80] = 0;
-                entries[ne].score[81] = 0;
-
-                (void) memcpy(entries[ne].name, raw_name, 30);
-                entries[ne].name[29] = 0;
-
-                entries[ne].value =
-                        score_value(entries[ne].score);
-
-                entries[ne].is_new = 0;
-                entries[ne].order = ne;
-
-                ne++;
+		if (!same_score_exists(entries, ne, raw_score, raw_name)) {
+		  append_entry(
+			       &entries,
+			       &ne,
+			       &capacity,
+			       raw_score,
+			       raw_name,
+			       score_value(raw_score),
+			       0);
+		}
         }
 
         fclose(fp);
